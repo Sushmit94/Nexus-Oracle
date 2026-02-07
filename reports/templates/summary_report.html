@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Routing Oracle Summary Report</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f0f2f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            padding: 40px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 10px; }
+        .header .period { opacity: 0.8; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .stat-card .label { font-size: 13px; color: #666; text-transform: uppercase; }
+        .stat-card .value { font-size: 36px; font-weight: 700; color: #1a1a2e; }
+        .stat-card .change { font-size: 13px; margin-top: 5px; }
+        .change.positive { color: #28a745; }
+        .change.negative { color: #dc3545; }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .card h2 {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #1a1a2e;
+        }
+        .miner-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .miner-table th, .miner-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .miner-table th { color: #666; font-weight: 600; }
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-healthy { background: #d4edda; color: #155724; }
+        .status-degraded { background: #fff3cd; color: #856404; }
+        .status-critical { background: #f8d7da; color: #721c24; }
+        .risk-bar {
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .risk-fill {
+            height: 100%;
+            border-radius: 4px;
+        }
+        .risk-low { background: #28a745; }
+        .risk-medium { background: #ffc107; }
+        .risk-high { background: #dc3545; }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Predictive Router Oracle - Summary Report</h1>
+            <div class="period">{{ period }}</div>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Total Miners</div>
+                <div class="value">{{ total_miners }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Healthy</div>
+                <div class="value">{{ healthy_miners }}</div>
+                <div class="change positive">{{ healthy_percentage }}%</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Incidents</div>
+                <div class="value">{{ total_incidents }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Reroutes</div>
+                <div class="value">{{ total_reroutes }}</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Miner Health Overview</h2>
+            <table class="miner-table">
+                <tr>
+                    <th>Miner ID</th>
+                    <th>Status</th>
+                    <th>Health Score</th>
+                    <th>Failure Risk</th>
+                    <th>Routing Weight</th>
+                </tr>
+                {% for miner in miners %}
+                <tr>
+                    <td>{{ miner.id }}</td>
+                    <td><span class="status-badge status-{{ miner.status }}">{{ miner.status }}</span></td>
+                    <td>{{ miner.health_score }}%</td>
+                    <td>
+                        <div class="risk-bar">
+                            <div class="risk-fill risk-{{ miner.risk_level }}" style="width: {{ miner.failure_probability }}%"></div>
+                        </div>
+                    </td>
+                    <td>{{ miner.routing_weight }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        
+        <div class="card">
+            <h2>Recent Incidents</h2>
+            <table class="miner-table">
+                <tr>
+                    <th>Time</th>
+                    <th>Miner</th>
+                    <th>Type</th>
+                    <th>Severity</th>
+                    <th>Resolution</th>
+                </tr>
+                {% for incident in incidents %}
+                <tr>
+                    <td>{{ incident.time }}</td>
+                    <td>{{ incident.miner }}</td>
+                    <td>{{ incident.type }}</td>
+                    <td><span class="status-badge status-{{ incident.severity }}">{{ incident.severity }}</span></td>
+                    <td>{{ incident.resolution }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        
+        <div class="footer">
+            Generated by Predictive Router Oracle | {{ generated_at }}
+        </div>
+    </div>
+</body>
+</html>

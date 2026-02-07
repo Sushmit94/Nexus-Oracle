@@ -1,0 +1,63 @@
+# Predictive Router Oracle - Threshold Configuration
+# These thresholds determine when alerts and routing decisions are triggered
+
+# Latency thresholds (milliseconds)
+latency:
+  warning: 200        # Yellow alert
+  critical: 500       # Red alert - consider rerouting
+  catastrophic: 1000  # Immediate reroute
+
+# Heartbeat monitoring
+heartbeat:
+  interval_ms: 5000           # Expected heartbeat interval
+  missed_warning: 2           # Warning after N missed beats
+  missed_critical: 5          # Critical after N missed beats
+  timeout_ms: 30000           # Node considered dead after timeout
+
+# Throughput thresholds (requests per second)
+throughput:
+  min_healthy: 100            # Minimum RPS for healthy status
+  degraded_threshold: 50      # Below this = degraded
+  critical_threshold: 10      # Below this = critical
+
+# Error rate thresholds (percentage)
+error_rate:
+  warning: 1.0                # 1% error rate triggers warning
+  critical: 5.0               # 5% triggers critical
+  catastrophic: 10.0          # 10% triggers immediate reroute
+
+# Failure prediction thresholds
+prediction:
+  reroute_threshold: 0.7      # Reroute when failure probability > 70%
+  warning_threshold: 0.5      # Warning when > 50%
+  confidence_minimum: 0.6     # Minimum confidence to act on prediction
+
+# Routing weights
+routing:
+  min_weight: 0.05            # Minimum weight (never fully exclude)
+  max_weight: 1.0             # Maximum weight
+  decay_rate: 0.1             # Weight decay per incident
+  recovery_rate: 0.05         # Weight recovery per healthy interval
+
+# Agent arbitration
+arbitration:
+  agreement_threshold: 2      # Number of agents that must agree
+  outlier_deviation: 0.3      # Max deviation before considered outlier
+  llm_weight: 0.3             # Weight for LLM predictions
+  ml_weight: 0.4              # Weight for ML predictions
+  statistical_weight: 0.3     # Weight for statistical predictions
+
+# Alerting
+alerts:
+  cooldown_seconds: 300       # Minimum time between alerts for same node
+  escalation_time: 600        # Time before escalating to next level
+  max_alerts_per_hour: 10     # Rate limiting
+
+# Health score calculation
+health_score:
+  latency_weight: 0.25
+  throughput_weight: 0.25
+  error_rate_weight: 0.25
+  uptime_weight: 0.25
+  min_score: 0.0
+  max_score: 100.0

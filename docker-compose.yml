@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  # Prediction API Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pro-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ETH_RPC_URL=${ETH_RPC_URL:-http://localhost:8545}
+      - CONTRACT_ADDRESS=${CONTRACT_ADDRESS:-}
+      - ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY:-}
+    volumes:
+      - ./config:/app/config:ro
+      - ./router/routing_table.json:/app/router/routing_table.json
+      - ./reports/output:/app/reports/output
+      - ./models:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - pro-network
+
+  # Dashboard Service
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pro-dashboard
+    command: ["python", "-m", "uvicorn", "dashboard.backend.server:app", "--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./dashboard/frontend:/app/dashboard/frontend:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - pro-network
+
+  # Metrics Collector Service
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pro-collector
+    command: ["python", "-c", "import asyncio; from metrics.collector import get_collector; c = get_collector(); asyncio.run(c.start())"]
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./config:/app/config:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - pro-network
+
+  # Traffic Controller Service
+  controller:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pro-controller
+    command: ["python", "-c", "import asyncio; from router.traffic_controller import get_traffic_controller; tc = get_traffic_controller(); asyncio.run(tc.start())"]
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./config:/app/config:ro
+      - ./router:/app/router
+    depends_on:
+      - api
+      - collector
+    restart: unless-stopped
+    networks:
+      - pro-network
+
+  # Nginx (optional - for serving static dashboard files)
+  nginx:
+    image: nginx:alpine
+    container_name: pro-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./dashboard/frontend:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - dashboard
+      - api
+    restart: unless-stopped
+    networks:
+      - pro-network
+    profiles:
+      - production
+
+networks:
+  pro-network:
+    driver: bridge
+
+volumes:
+  models:
+  reports:
