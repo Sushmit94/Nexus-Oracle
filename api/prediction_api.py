@@ -3,10 +3,11 @@ Prediction API Module
 FastAPI-based paid API for accessing predictions and routing data
 """
 
+# ============ 1. ALL IMPORTS AT THE TOP ============
 import time
 import logging
 from typing import Dict, List, Optional, Any
-from fastapi import FastAPI, HTTPException, Depends, Header, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, Header, Query, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -14,12 +15,31 @@ import uvicorn
 
 from .auth import AuthManager, get_auth_manager, ApiKey, Permission, AccessTier
 
+# ============ 2. LOGGING CONFIGURATION ============
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# ============ Pydantic Models ============
+# ============ 3. CREATE FASTAPI APP FIRST ============
+app = FastAPI(
+    title="Predictive Router Oracle API",
+    description="AI-driven routing oracle that predicts miner/validator failures",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
 
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ============ 4. PYDANTIC MODELS ============
 
 class HealthResponse(BaseModel):
     miner_id: str
@@ -81,70 +101,31 @@ class ErrorResponse(BaseModel):
     retry_after: Optional[float] = None
 
 
-# ============ FastAPI App ============
+# ============ 5. CONNECTION MANAGER ============
 
-app = FastAPI(
-    title="Predictive Router Oracle API",
-    description="AI-driven routing oracle that predicts miner/validator failures",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
 
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
 
-# ============ Dependencies ============
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except:
+                pass
 
 
-async def verify_api_key(
-    x_api_key: str = Header(..., description="API Key for authentication"),
-) -> ApiKey:
-    """Verify API key and check rate limits"""
-    auth = get_auth_manager()
-
-    # Validate key
-    api_key = auth.validate_key(x_api_key)
-    if not api_key:
-        raise HTTPException(status_code=401, detail="Invalid or expired API key")
-
-    # Check rate limit
-    allowed, rate_info = auth.check_rate_limit(api_key)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Rate limit exceeded ({rate_info.get('exceeded')})",
-            headers={"Retry-After": str(int(rate_info.get("retry_after", 60)))},
-        )
-
-    return api_key
+manager = ConnectionManager()
 
 
-def require_permission(permission: Permission):
-    """Dependency factory for permission checking"""
-
-    async def check_permission(api_key: ApiKey = Depends(verify_api_key)) -> ApiKey:
-        auth = get_auth_manager()
-        if not auth.check_permission(api_key, permission):
-            raise HTTPException(
-                status_code=403,
-                detail=f"Permission denied: {permission.value} required",
-            )
-        return api_key
-
-    return check_permission
-
-
-# ============ Simulated Data Store ============
-# In production, these would connect to the actual system components
-
+# ============ 6. SIMULATED DATA STORE ============
 
 class DataStore:
     """Simulated data store for API responses"""
@@ -190,8 +171,47 @@ class DataStore:
 data_store = DataStore()
 
 
-# ============ Health Endpoints ============
+# ============ 7. DEPENDENCIES ============
 
+async def verify_api_key(
+    x_api_key: str = Header(..., description="API Key for authentication"),
+) -> ApiKey:
+    """Verify API key and check rate limits"""
+    auth = get_auth_manager()
+
+    # Validate key
+    api_key = auth.validate_key(x_api_key)
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Invalid or expired API key")
+
+    # Check rate limit
+    allowed, rate_info = auth.check_rate_limit(api_key)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded ({rate_info.get('exceeded')})",
+            headers={"Retry-After": str(int(rate_info.get("retry_after", 60)))},
+        )
+
+    return api_key
+
+
+def require_permission(permission: Permission):
+    """Dependency factory for permission checking"""
+
+    async def check_permission(api_key: ApiKey = Depends(verify_api_key)) -> ApiKey:
+        auth = get_auth_manager()
+        if not auth.check_permission(api_key, permission):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Permission denied: {permission.value} required",
+            )
+        return api_key
+
+    return check_permission
+
+
+# ============ 8. HEALTH ENDPOINTS ============
 
 @app.get("/", tags=["Health"])
 async def root():
@@ -214,8 +234,34 @@ async def health_check():
     }
 
 
-# ============ Miner Health Endpoints ============
+# ============ 9. WEBSOCKET ENDPOINT (NOW app IS DEFINED) ============
 
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive and send updates every 2 seconds
+            # In a real app, you'd trigger this based on actual data updates
+            await websocket.receive_text()  # Wait for messages (optional)
+            
+            # Example: sending the current routing table as an update
+            # You can customize this payload to match your DashboardData type
+            await manager.broadcast({
+                "type": "update",
+                "data": {
+                    "summary": {
+                        "active_miners": len(data_store.miners),
+                        "total_requests": 15420,  # Example data
+                        "system_health": 98.5
+                    }
+                }
+            })
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+
+# ============ 10. MINER HEALTH ENDPOINTS ============
 
 @app.get("/api/v1/miners", response_model=Dict[str, HealthResponse], tags=["Miners"])
 async def get_all_miners(
@@ -266,8 +312,7 @@ async def get_miner_health(
     )
 
 
-# ============ Prediction Endpoints ============
-
+# ============ 11. PREDICTION ENDPOINTS ============
 
 @app.get(
     "/api/v1/predictions/{miner_id}",
@@ -341,8 +386,7 @@ async def get_all_predictions(
     return result
 
 
-# ============ Routing Endpoints ============
-
+# ============ 12. ROUTING ENDPOINTS ============
 
 @app.get("/api/v1/routing", response_model=RoutingTableResponse, tags=["Routing"])
 async def get_routing_table(
@@ -409,8 +453,7 @@ async def get_recent_decisions(
     return decisions
 
 
-# ============ Admin Endpoints ============
-
+# ============ 13. ADMIN ENDPOINTS ============
 
 @app.post("/api/v1/admin/keys", response_model=ApiKeyResponse, tags=["Admin"])
 async def create_api_key(
@@ -482,8 +525,7 @@ async def get_key_usage(
     return stats
 
 
-# ============ Error Handlers ============
-
+# ============ 14. ERROR HANDLERS ============
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
@@ -505,8 +547,7 @@ async def general_exception_handler(request, exc):
     )
 
 
-# ============ Run Server ============
-
+# ============ 15. RUN SERVER ============
 
 def run_api(host: str = "0.0.0.0", port: int = 8000):
     """Run the API server"""

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Predictive Router Oracle - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#667eea',
+                        secondary: '#764ba2',
+                        success: '#10b981',
+                        warning: '#f59e0b',
+                        danger: '#ef4444',
+                        dark: '#1a1a2e'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 1; }
+            100% { transform: scale(1.3); opacity: 0; }
+        }
+        .pulse-ring { animation: pulse-ring 1.5s ease-out infinite; }
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app">
+        <!-- Header -->
+        <header class="gradient-bg text-white shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+                <div>
+                    <h1 class="text-2xl font-bold">Predictive Router Oracle</h1>
+                    <p class="text-sm opacity-80">AI-Driven Routing Intelligence</p>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div id="connection-status" class="flex items-center">
+                        <span class="w-3 h-3 bg-yellow-400 rounded-full mr-2"></span>
+                        <span class="text-sm">Connecting...</span>
+                    </div>
+                    <div class="text-sm opacity-80" id="last-update">--</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 py-6">
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+                    <div class="text-gray-500 text-sm uppercase tracking-wide">Total Miners</div>
+                    <div id="total-miners" class="text-4xl font-bold text-dark mt-2">--</div>
+                </div>
+                <div class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+                    <div class="text-gray-500 text-sm uppercase tracking-wide">Healthy</div>
+                    <div id="healthy-miners" class="text-4xl font-bold text-success mt-2">--</div>
+                </div>
+                <div class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+                    <div class="text-gray-500 text-sm uppercase tracking-wide">At Risk</div>
+                    <div id="at-risk-miners" class="text-4xl font-bold text-warning mt-2">--</div>
+                </div>
+                <div class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+                    <div class="text-gray-500 text-sm uppercase tracking-wide">Critical</div>
+                    <div id="critical-miners" class="text-4xl font-bold text-danger mt-2">--</div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Miners Table -->
+                <div class="lg:col-span-2 bg-white rounded-xl shadow-sm overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-100">
+                        <h2 class="text-lg font-semibold text-dark">Miner Health Status</h2>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Miner ID</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Health</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Failure Risk</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Weight</th>
+                                </tr>
+                            </thead>
+                            <tbody id="miners-table" class="divide-y divide-gray-100">
+                                <tr>
+                                    <td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Sidebar -->
+                <div class="space-y-6">
+                    <!-- Predictions Panel -->
+                    <div class="bg-white rounded-xl shadow-sm">
+                        <div class="px-6 py-4 border-b border-gray-100">
+                            <h2 class="text-lg font-semibold text-dark">AI Predictions</h2>
+                        </div>
+                        <div id="predictions-panel" class="p-6">
+                            <div class="text-gray-500 text-center">Loading predictions...</div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Events -->
+                    <div class="bg-white rounded-xl shadow-sm">
+                        <div class="px-6 py-4 border-b border-gray-100">
+                            <h2 class="text-lg font-semibold text-dark">Recent Events</h2>
+                        </div>
+                        <div id="events-panel" class="p-4 max-h-64 overflow-y-auto">
+                            <div class="text-gray-500 text-center">Loading events...</div>
+                        </div>
+                    </div>
+
+                    <!-- System Metrics -->
+                    <div class="bg-white rounded-xl shadow-sm p-6">
+                        <h2 class="text-lg font-semibold text-dark mb-4">System Metrics</h2>
+                        <div class="space-y-4">
+                            <div>
+                                <div class="flex justify-between text-sm mb-1">
+                                    <span class="text-gray-500">Avg Health Score</span>
+                                    <span id="avg-health" class="font-medium">--</span>
+                                </div>
+                                <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                                    <div id="avg-health-bar" class="h-full bg-success rounded-full transition-all" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-sm mb-1">
+                                    <span class="text-gray-500">Avg Latency</span>
+                                    <span id="avg-latency" class="font-medium">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Dashboard State
+        let ws = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+
+        // DOM Elements
+        const connectionStatus = document.getElementById('connection-status');
+        const lastUpdate = document.getElementById('last-update');
+        const minersTable = document.getElementById('miners-table');
+        const predictionsPanel = document.getElementById('predictions-panel');
+        const eventsPanel = document.getElementById('events-panel');
+
+        // Connect WebSocket
+        function connect() {
+            const wsUrl = `ws://${window.location.hostname}:8080/ws`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                updateConnectionStatus(true);
+                reconnectAttempts = 0;
+            };
+
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                if (message.type === 'update') {
+                    updateDashboard(message.data);
+                } else if (message.data) {
+                    updateDashboard(message.data);
+                } else {
+                    updateDashboard(message);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateConnectionStatus(false);
+                attemptReconnect();
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        function attemptReconnect() {
+            if (reconnectAttempts < maxReconnectAttempts) {
+                reconnectAttempts++;
+                console.log(`Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`);
+                setTimeout(connect, 2000 * reconnectAttempts);
+            }
+        }
+
+        function updateConnectionStatus(connected) {
+            const dot = connectionStatus.querySelector('span:first-child');
+            const text = connectionStatus.querySelector('span:last-child');
+            
+            if (connected) {
+                dot.className = 'w-3 h-3 bg-green-400 rounded-full mr-2';
+                text.textContent = 'Connected';
+            } else {
+                dot.className = 'w-3 h-3 bg-red-400 rounded-full mr-2';
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        function updateDashboard(data) {
+            if (!data) return;
+
+            // Update last update time
+            const now = new Date();
+            lastUpdate.textContent = now.toLocaleTimeString();
+
+            // Update summary cards
+            if (data.summary) {
+                document.getElementById('total-miners').textContent = data.summary.total_miners || '--';
+                document.getElementById('healthy-miners').textContent = data.summary.healthy || '--';
+                document.getElementById('at-risk-miners').textContent = data.summary.degraded || '--';
+                document.getElementById('critical-miners').textContent = data.summary.critical || '--';
+                
+                // Update metrics
+                document.getElementById('avg-health').textContent = `${data.summary.avg_health_score || 0}%`;
+                document.getElementById('avg-health-bar').style.width = `${data.summary.avg_health_score || 0}%`;
+                document.getElementById('avg-latency').textContent = `${data.summary.avg_latency_ms || 0} ms`;
+            }
+
+            // Update miners table
+            if (data.miners) {
+                updateMinersTable(data.miners);
+            }
+
+            // Update predictions
+            if (data.predictions) {
+                updatePredictions(data.predictions);
+            }
+
+            // Update events
+            if (data.recent_events) {
+                updateEvents(data.recent_events);
+            }
+        }
+
+        function updateMinersTable(miners) {
+            const rows = Object.entries(miners).map(([id, miner]) => {
+                const statusColors = {
+                    healthy: 'bg-green-100 text-green-800',
+                    degraded: 'bg-yellow-100 text-yellow-800',
+                    critical: 'bg-red-100 text-red-800'
+                };
+                
+                const riskColor = miner.failure_probability > 0.5 ? 'bg-red-500' : 
+                                  miner.failure_probability > 0.3 ? 'bg-yellow-500' : 'bg-green-500';
+                
+                return `
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4">
+                            <div class="font-medium text-dark">${id}</div>
+                            <div class="text-xs text-gray-400">${miner.endpoint || ''}</div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="px-2 py-1 text-xs font-medium rounded-full ${statusColors[miner.status] || 'bg-gray-100'}">
+                                ${miner.status || 'unknown'}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center">
+                                <span class="mr-2 font-medium">${miner.health_score || 0}%</span>
+                                <div class="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                    <div class="h-full bg-primary rounded-full" style="width: ${miner.health_score || 0}%"></div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center">
+                                <div class="w-20 h-2 bg-gray-200 rounded-full overflow-hidden mr-2">
+                                    <div class="h-full ${riskColor} rounded-full" style="width: ${(miner.failure_probability || 0) * 100}%"></div>
+                                </div>
+                                <span class="text-sm">${((miner.failure_probability || 0) * 100).toFixed(0)}%</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 font-medium">${(miner.routing_weight || 0).toFixed(2)}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            minersTable.innerHTML = rows || '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No miners found</td></tr>';
+        }
+
+        function updatePredictions(predictions) {
+            if (!predictions.miners_at_risk || predictions.miners_at_risk.length === 0) {
+                predictionsPanel.innerHTML = `
+                    <div class="text-center py-4">
+                        <div class="text-4xl mb-2">✓</div>
+                        <div class="text-green-600 font-medium">All Clear</div>
+                        <div class="text-sm text-gray-500">No miners at high risk</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            const riskCards = predictions.miners_at_risk.slice(0, 3).map(risk => `
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg mb-2">
+                    <div>
+                        <div class="font-medium text-dark">${risk.miner_id}</div>
+                        <div class="text-xs text-gray-500">Failure Probability</div>
+                    </div>
+                    <div class="text-2xl font-bold ${risk.probability > 0.5 ? 'text-red-500' : 'text-yellow-500'}">
+                        ${(risk.probability * 100).toFixed(0)}%
+                    </div>
+                </div>
+            `).join('');
+            
+            predictionsPanel.innerHTML = `
+                <div class="mb-2 text-sm text-gray-500">${predictions.total_at_risk} miner(s) at elevated risk</div>
+                ${riskCards}
+            `;
+        }
+
+        function updateEvents(events) {
+            const eventIcons = {
+                info: '📋',
+                warning: '⚠️',
+                success: '✅',
+                error: '❌'
+            };
+            
+            const eventItems = events.map(event => {
+                const time = new Date(event.time * 1000).toLocaleTimeString();
+                return `
+                    <div class="flex items-start space-x-3 py-2 border-b border-gray-100 last:border-0">
+                        <span class="text-lg">${eventIcons[event.type] || '📌'}</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm text-dark">${event.message}</div>
+                            <div class="text-xs text-gray-400">${time}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            eventsPanel.innerHTML = eventItems || '<div class="text-gray-500 text-center py-4">No recent events</div>';
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            connect();
+            
+            // Fallback to HTTP polling if WebSocket fails
+            setTimeout(() => {
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    console.log('Falling back to HTTP polling');
+                    fetchDashboard();
+                    setInterval(fetchDashboard, 3000);
+                }
+            }, 5000);
+        });
+
+        async function fetchDashboard() {
+            try {
+                const response = await fetch(`http://${window.location.hostname}:8080/api/dashboard`);
+                const data = await response.json();
+                updateDashboard(data);
+            } catch (error) {
+                console.error('Fetch error:', error);
+            }
+        }
+    </script>
+</body>
+</html>

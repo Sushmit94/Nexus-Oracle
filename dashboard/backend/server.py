@@ -1,24 +1,21 @@
-"""
-Dashboard Backend Server
-WebSocket-enabled server for real-time dashboard updates
-"""
-
 import asyncio
 import json
 import time
 import logging
+import math
+import random
 from typing import Dict, Set, Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 import uvicorn
 
+# ============ Configuration ============
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("pro-dashboard")
 
 app = FastAPI(title="Predictive Router Oracle Dashboard")
 
-# CORS middleware
+# Strict CORS for development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,283 +24,179 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ============ WebSocket Manager ============
-
-
+# ============ 1. WebSocket Manager ============
 class ConnectionManager:
-    """Manages WebSocket connections"""
-
+    """Manages WebSocket connections and handles broadcasting."""
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.add(websocket)
-        logger.info(f"Client connected. Total: {len(self.active_connections)}")
+        logger.info(f"Client connected. Active connections: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket):
         self.active_connections.discard(websocket)
-        logger.info(f"Client disconnected. Total: {len(self.active_connections)}")
+        logger.info(f"Client disconnected. Active connections: {len(self.active_connections)}")
 
     async def broadcast(self, message: Dict[str, Any]):
-        """Broadcast message to all connected clients"""
+        """
+        Broadcasts message to all clients.
+        Handles stale connections gracefully.
+        """
         if not self.active_connections:
             return
 
-        message_json = json.dumps(message)
-        disconnected = set()
+        # Convert to JSON once to save CPU
+        try:
+            message_json = json.dumps(message)
+        except Exception as e:
+            logger.error(f"JSON serialization failed: {e}")
+            return
 
+        to_remove = set()
         for connection in self.active_connections:
             try:
+                # We use send_text because we already serialized it
                 await connection.send_text(message_json)
-            except Exception:
-                disconnected.add(connection)
+            except (WebSocketDisconnect, RuntimeError) as e:
+                # RuntimeError often happens if connection is closed during send
+                logger.warning(f"Failed to send to client: {e}")
+                to_remove.add(connection)
+            except Exception as e:
+                logger.error(f"Unexpected broadcast error: {e}")
+                to_remove.add(connection)
 
-        for conn in disconnected:
-            self.active_connections.discard(conn)
-
+        for conn in to_remove:
+            self.disconnect(conn)
 
 manager = ConnectionManager()
 
-
-# ============ Sample Data Generator ============
-
-
+# ============ 2. Data Simulator (Stable) ============
 class DataSimulator:
-    """Simulates real-time data for demo purposes"""
-
     def __init__(self):
-        self.miners = {
-            "miner_001": {
-                "endpoint": "http://node1.cortensor.io:8001",
-                "base_health": 95,
-            },
-            "miner_002": {
-                "endpoint": "http://node2.cortensor.io:8002",
-                "base_health": 72,
-            },
-            "miner_003": {
-                "endpoint": "http://node3.cortensor.io:8003",
-                "base_health": 88,
-            },
-            "miner_004": {
-                "endpoint": "http://node4.cortensor.io:8004",
-                "base_health": 45,
-            },
-            "miner_005": {
-                "endpoint": "http://node5.cortensor.io:8005",
-                "base_health": 98,
-            },
-        }
         self.tick = 0
+        self.miners_config = {
+            f"miner_{i:03d}": {"base_health": random.randint(50, 98)} 
+            for i in range(1, 6)
+        }
 
     def get_dashboard_data(self) -> Dict[str, Any]:
-        """Generate current dashboard state"""
-        import random
-        import math
-
         self.tick += 1
-
         miners_data = {}
-        for miner_id, config in self.miners.items():
-            # Add some variation
-            noise = random.uniform(-5, 5)
-            wave = math.sin(self.tick / 10) * 3
+        
+        # Generate Miner Data
+        for mid, config in self.miners_config.items():
+            # Create organic-looking oscillation
+            oscillation = math.sin(self.tick * 0.1) * 10
+            noise = random.uniform(-2, 2)
+            current_health = max(0, min(100, config["base_health"] + oscillation + noise))
+            
+            # Determine status
+            if current_health > 80: status = "healthy"
+            elif current_health > 50: status = "degraded"
+            else: status = "critical"
 
-            health = max(0, min(100, config["base_health"] + noise + wave))
-            failure_prob = (100 - health) / 100
-
-            miners_data[miner_id] = {
-                "endpoint": config["endpoint"],
-                "health_score": round(health, 1),
-                "failure_probability": round(failure_prob, 3),
-                "routing_weight": round(1 - failure_prob, 3),
-                "status": "healthy"
-                if health > 70
-                else ("degraded" if health > 40 else "critical"),
-                "latency_ms": round(
-                    50 + (100 - health) * 5 + random.uniform(-10, 10), 1
-                ),
-                "throughput_rps": round(
-                    100 * (health / 100) + random.uniform(-5, 5), 1
-                ),
-                "error_rate": round((100 - health) / 10 + random.uniform(-0.5, 0.5), 2),
-                "last_heartbeat": time.time() - random.uniform(0, 5),
+            miners_data[mid] = {
+                "endpoint": f"http://node-{mid}.cortensor.io",
+                "status": status,
+                "health_score": int(current_health),
+                "failure_probability": round((100 - current_health) / 100, 2),
+                "routing_weight": round(current_health / 100, 2),
+                # Latency correlates inversely with health
+                "latency_ms": int(20 + (100 - current_health) * 2 + random.uniform(0, 10)),
+                "last_heartbeat": time.time()
             }
 
-        # System summary
-        total_miners = len(miners_data)
-        healthy_count = sum(1 for m in miners_data.values() if m["status"] == "healthy")
-        degraded_count = sum(
-            1 for m in miners_data.values() if m["status"] == "degraded"
-        )
-        critical_count = sum(
-            1 for m in miners_data.values() if m["status"] == "critical"
-        )
+        # Aggregates
+        total = len(miners_data)
+        healthy = sum(1 for m in miners_data.values() if m['status'] == 'healthy')
+        degraded = sum(1 for m in miners_data.values() if m['status'] == 'degraded')
+        critical = sum(1 for m in miners_data.values() if m['status'] == 'critical')
+        
+        # Safe average calculation
+        avg_health = sum(m['health_score'] for m in miners_data.values()) / total if total > 0 else 0
+        avg_latency = sum(m['latency_ms'] for m in miners_data.values()) / total if total > 0 else 0
 
-        avg_health = sum(m["health_score"] for m in miners_data.values()) / total_miners
-        avg_latency = sum(m["latency_ms"] for m in miners_data.values()) / total_miners
+        # Predictions Logic
+        at_risk_miners = [
+            {"miner_id": k, "probability": v["failure_probability"]} 
+            for k, v in miners_data.items() 
+            if v["failure_probability"] > 0.4
+        ]
+        at_risk_miners.sort(key=lambda x: x["probability"], reverse=True)
 
         return {
             "timestamp": time.time(),
             "summary": {
-                "total_miners": total_miners,
-                "healthy": healthy_count,
-                "degraded": degraded_count,
-                "critical": critical_count,
-                "avg_health_score": round(avg_health, 1),
-                "avg_latency_ms": round(avg_latency, 1),
-                "system_status": "healthy" if critical_count == 0 else "degraded",
+                "total_miners": total,
+                "healthy": healthy,
+                "degraded": degraded,
+                "critical": critical,
+                "avg_health_score": int(avg_health),
+                "avg_latency_ms": int(avg_latency)
             },
             "miners": miners_data,
-            "recent_events": self._generate_events(),
-            "predictions": self._generate_predictions(miners_data),
+            "predictions": {
+                "miners_at_risk": at_risk_miners,
+                "total_at_risk": len(at_risk_miners)
+            },
+            "recent_events": [
+                {"type": "info", "message": "System operational", "time": time.time()}
+            ]
         }
-
-    def _generate_events(self) -> list:
-        """Generate sample recent events"""
-        events = [
-            {
-                "time": time.time() - 60,
-                "type": "info",
-                "message": "Routing weights updated",
-            },
-            {
-                "time": time.time() - 180,
-                "type": "warning",
-                "message": "miner_004 latency spike detected",
-            },
-            {
-                "time": time.time() - 300,
-                "type": "success",
-                "message": "miner_003 recovered from degraded state",
-            },
-        ]
-        return events[:5]
-
-    def _generate_predictions(self, miners_data: Dict) -> Dict:
-        """Generate prediction summary"""
-        at_risk = [
-            {"miner_id": mid, "probability": m["failure_probability"]}
-            for mid, m in miners_data.items()
-            if m["failure_probability"] > 0.3
-        ]
-
-        return {
-            "miners_at_risk": sorted(at_risk, key=lambda x: -x["probability"]),
-            "total_at_risk": len(at_risk),
-            "highest_risk": at_risk[0] if at_risk else None,
-        }
-
 
 simulator = DataSimulator()
 
-
-# ============ REST Endpoints ============
-
-
-@app.get("/")
-async def root():
-    return {"name": "Predictive Router Oracle Dashboard", "status": "operational"}
-
-
+# ============ 3. API Routes ============
 @app.get("/api/dashboard")
 async def get_dashboard():
-    """Get current dashboard state"""
     return simulator.get_dashboard_data()
 
-
-@app.get("/api/miners")
-async def get_miners():
-    """Get all miners"""
-    data = simulator.get_dashboard_data()
-    return data["miners"]
-
-
-@app.get("/api/miners/{miner_id}")
-async def get_miner(miner_id: str):
-    """Get specific miner"""
-    data = simulator.get_dashboard_data()
-    if miner_id in data["miners"]:
-        return data["miners"][miner_id]
-    return {"error": "Miner not found"}
-
-
-@app.get("/api/predictions")
-async def get_predictions():
-    """Get current predictions"""
-    data = simulator.get_dashboard_data()
-    return data["predictions"]
-
-
-# ============ WebSocket Endpoint ============
-
-
+# ============ 4. WebSocket Handler (The Fix) ============
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time updates"""
     await manager.connect(websocket)
-
     try:
-        # Send initial state
+        # 1. Send immediate data so the UI populates instantly
         await websocket.send_json(simulator.get_dashboard_data())
-
-        # Listen for messages and send updates
+        
+        # 2. Keep the connection open and listen for client pings
+        # We DO NOT send data from this loop. We only listen.
         while True:
+            data = await websocket.receive_text()
+            # Optional: Handle client-side heartbeat
             try:
-                # Wait for client message or timeout
-                data = await asyncio.wait_for(websocket.receive_text(), timeout=2.0)
-
-                # Handle client commands
-                try:
-                    command = json.loads(data)
-                    if command.get("type") == "ping":
-                        await websocket.send_json(
-                            {"type": "pong", "timestamp": time.time()}
-                        )
-                except json.JSONDecodeError:
-                    pass
-
-            except asyncio.TimeoutError:
-                # Send periodic updates
-                await websocket.send_json(
-                    {"type": "update", "data": simulator.get_dashboard_data()}
-                )
-
+                message = json.loads(data)
+                if message.get("type") == "ping":
+                    await websocket.send_json({"type": "pong"})
+            except:
+                pass
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+        logger.error(f"WebSocket Connection Error: {e}")
         manager.disconnect(websocket)
 
-
-# ============ Background Update Task ============
-
-
-async def broadcast_updates():
-    """Background task to broadcast updates"""
+# ============ 5. Background Broadcaster ============
+async def broadcast_loop():
+    """
+    This is the ONLY place that pushes updates to clients.
+    Running every 2 seconds.
+    """
+    logger.info("Starting broadcast loop...")
     while True:
-        await asyncio.sleep(3)
-        await manager.broadcast(
-            {"type": "update", "data": simulator.get_dashboard_data()}
-        )
-
+        try:
+            await asyncio.sleep(2)
+            data = simulator.get_dashboard_data()
+            await manager.broadcast({"type": "update", "data": data})
+        except Exception as e:
+            logger.error(f"Broadcast loop error: {e}")
+            await asyncio.sleep(5) # Backoff on error
 
 @app.on_event("startup")
 async def startup_event():
-    """Start background tasks"""
-    asyncio.create_task(broadcast_updates())
-    logger.info("Dashboard backend started")
-
-
-# ============ Run Server ============
-
-
-def run_dashboard(host: str = "0.0.0.0", port: int = 8080):
-    """Run the dashboard backend server"""
-    uvicorn.run(app, host=host, port=port)
-
+    asyncio.create_task(broadcast_loop())
 
 if __name__ == "__main__":
-    run_dashboard()
+    uvicorn.run(app, host="0.0.0.0", port=8080)
